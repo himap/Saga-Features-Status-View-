@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Custom Store Grid Example</title>
+
+    <script type="text/javascript" src="https://rally1.rallydev.com/apps/2.0rc2/sdk.js"></script>
+
+    <script type="text/javascript">
+        Rally.onReady(function() {
+            Ext.define('Rally.example.CustomStoreGrid', {
+                extend: 'Rally.app.App',
+                componentCls: 'app',
+            
+                launch: function() {
+                    Ext.create('Rally.data.wsapi.Store', {
+                        model: 'userstory',
+                        autoLoad: true,
+                        pageSize: 100,
+						filters: [
+							{
+								property: 'c_StoryType',
+								value: 'SAGA Feature'
+							}
+						],		
+                        listeners: {
+                            load: this._onDataLoaded,
+                            scope: this
+                        },
+                        fetch: ['FormattedID', 'Name', 'ObjectID', 'Children', 'ScheduleState', 'TargetRelease', 'Tasks', 'c_StoryType', 'TestCases', 'TestCaseStatus', 'Description', 'LastVerdict']
+                    });
+                },
+            
+                _onDataLoaded: function(store, data) {
+                	var stories = [];
+                	var pendingTestCases = data.length;
+                	var pendingChildren = data.length;
+                	
+                		Ext.Array.each(data, function(story) {
+                				var s = {
+                					FormattedID: story.get('FormattedID'),
+									Name: story.get('Name'),
+									_ref: story.get("_ref"),
+									ScheduleState: story.get("ScheduleState"),
+									ChildrenCount: story.get("DirectChildrenCount"),
+									StoryType: story.get("c_StoryType"),
+									TestCaseCount: story.get('TestCases').Count,
+									TestCaseStatus: story.get('TestCaseStatus'),
+									Children: [],
+									TestCases: []
+								};
+								
+								var childCollection = story.getCollection('Children');
+								childCollection.load({
+									fetch:['FormattedID', '_ref', 'ObjectID', 'Parent'],	
+									callback: function(records, operation, success){
+										Ext.Array.each(records, function(child){
+											s.Children.push({_ref: child.get('_ref'),
+															FormattedID: child.get('FormattedID'),
+															ObjectID: child.get('ObjectID')
+														});
+											var testcases = child.getCollection('TestCases', {fetch:['FormattedID', 'LastVerdict']});
+												testcases.load({
+													callback: function(records, operation, success){
+														_.each(records, function(testcase){
+															s.TestCases.push({_ref: testcase.get('_ref'),
+																			FormattedID: testcase.get('FormattedID'),
+																			Name: testcase.get('Name'),
+																			LastVerdict: testcase.get('LastVerdict')
+																		});
+														}, this);
+														
+														--pendingTestCases;
+														if (pendingTestCases === 0) {
+															this._createGrid(stories);
+														}
+													},
+													scope: this
+												});
+										}, this);
+										
+									/*	--pendingChildren;
+										if (pendingChildren === 0) {
+											this._createGrid(stories);
+										}*/
+									},
+									scope: this
+								});	
+													
+								/*var testcases = child.getCollection('TestCases', {fetch:['FormattedID','LastVerdict']});
+								testcases.load({
+									callback: function(records, operation, success){
+										_.each(records, function(testcase){
+											s.TestCases.push({_ref: testcase.get('_ref'),
+															FormattedID: testcase.get('FormattedID'),
+															Name: testcase.get('Name'),
+															LastVerdict: testcase.get('LastVerdict')
+														});
+										}, this);
+										
+										--pendingTestCases;
+										if (pendingTestCases === 0) {
+											this._createGrid(stories);
+										}
+									},
+									scope: this
+								});*/
+								stories.push(s);
+					 }, this);
+				},	
+                	
+                   /* var records = _.map(data, function(record) {
+                        //Perform custom actions with the data here
+                        //Calculations, etc.
+                        return Ext.apply({
+                            TaskCount: record.get('Tasks').Count
+                        }, record.getData());
+                    });
+                    
+                    var story = records[0];
+             //       var childrenInfo = story.get('Children');
+                    
+                    story.getCollections('Children').load({
+                    		fetch: ['FormattedID', 'Name'],
+                    		callback: function(records, operation, success) {
+                    			Ext.Array.each(records, function(children) {
+                    				console.log(children.get('FormattedID'));
+                    			});
+                    		}
+                    });		*/
+                    		
+				_createGrid: function(stories) {
+					var myStore = Ext.create('Rally.data.custom.Store', {
+							data: stories,
+							pageSize: 100,
+						});
+					if (!this.grid) {
+					this.grid = this.add({
+                        xtype: 'rallygrid',
+                        showPagingToolbar: false,
+                        showRowActionsColumn: false,
+                        editable: false,
+                        store: myStore,
+                        columnCfgs: [
+                            {
+                                xtype: 'templatecolumn',
+                                text: 'ID',
+                                dataIndex: 'FormattedID',
+                                width: 100,
+                                tpl: Ext.create('Rally.ui.renderer.template.FormattedIDTemplate')
+                            },
+                            {
+                                text: 'Name',
+                                dataIndex: 'Name',
+                                flex: 1
+                            },
+                            {
+                            	text: 'Children Count',
+                            	dataIndex: 'ChildrenCount'
+                            },	
+							{
+                                text: 'Children',
+                                dataIndex: 'Children',
+                                minWidth: 200,
+                                renderer: function(value) {
+                                	var html = [];
+                                	Ext.Array.each(value, function(child){
+                                			html.push('<a href="' + Rally.nav.Manager.getDetailUrl(child) + '">' + child.FormattedID);
+                                	});
+									return html.join('</br>');
+								}		
+                                			
+                            },
+                            {
+                                text: 'Schedule State',
+                                dataIndex: 'ScheduleState'
+                            },
+							{
+								text: 'Story Type',
+								dataIndex: 'StoryType'
+							},
+							{
+								text: 'TestCases-Verdict',
+								dataIndex: 'TestCases',
+								minWidth: 200,
+								renderer: function(value) {
+									var html = [];
+									Ext.Array.each(value, function(testcase){
+										html.push('<a href="' + Rally.nav.Manager.getDetailUrl(testcase) + '">' + testcase.FormattedID + '</a>' + '-' + testcase.LastVerdict);
+									});
+									return html.join('</br>');
+								}
+							}	
+                        ]
+                    });
+                }
+                else{
+                	this.grid.reconfigure(myStore);
+                }
+              }  
+            });
+            
+
+            Rally.launchApp('Rally.example.CustomStoreGrid', {
+              name: 'Custom Store Grid Example'
+            });
+        });
+    </script>
+
+    <style type="text/css">
+        
+    </style>
+</head>
+<body></body>
+</html>

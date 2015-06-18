@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Custom Store Grid Example</title>
+
+    <script type="text/javascript" src="https://rally1.rallydev.com/apps/2.0rc3/sdk.js"></script>
+
+    <script type="text/javascript">
+        Rally.onReady(function() {
+            Ext.define('Rally.example.CustomStoreGrid', {
+                extend: 'Rally.app.App',
+                componentCls: 'app',
+            
+                launch: function() {
+                    Ext.create('Rally.data.wsapi.Store', {
+                        model: 'userstory',
+                        autoLoad: true,
+						filters: [
+							{
+								property: 'c_StoryType',
+								value: 'SAGA Feature'
+							}
+						],		
+                        listeners: {
+                            load: this._onDataLoaded,
+//							console.log('got data!', store, data, success);
+                            scope: this
+                        },
+                        fetch: ['FormattedID', 'Name', 'Children', 'ScheduleState', 'TargetRelease', 'Tasks', 'c_StoryType', 'TestCases', 'TestCaseStatus', 'Description', 'LastVerdict']
+                    });
+                },
+            
+                _onDataLoaded: function(store, data) {
+                    var records = _.map(data, function(record) {
+                        //Perform custom actions with the data here
+                        //Calculations, etc.
+                        return Ext.apply({
+                            TaskCount: record.get('Tasks').Count
+                        }, record.getData());
+                    });	
+											
+                    this.add({
+                        xtype: 'rallygrid',
+                        showPagingToolbar: false,
+                        showRowActionsColumn: false,
+                        editable: false,
+                        store: Ext.create('Rally.data.custom.Store', {
+                            data: records
+                        }),
+                        columnCfgs: [
+                            {
+                                xtype: 'templatecolumn',
+                                text: 'ID',
+                                dataIndex: 'FormattedID',
+                                width: 100,
+                                tpl: Ext.create('Rally.ui.renderer.template.FormattedIDTemplate')
+                            },
+                            {
+                                text: 'Name',
+                                dataIndex: 'Name',
+                                flex: 1
+                            },
+							{
+                                text: 'Children',
+                                dataIndex: 'Children'
+                            },
+                            {
+                                text: 'Schedule State',
+                                dataIndex: 'ScheduleState'
+                            },
+							{
+								text: 'Story Type',
+								dataIndex: 'c_StoryType'
+							}
+                            /*{
+                                text: '# of Tasks',
+                                dataIndex: 'TaskCount'
+                            },*/
+                           /* {
+                                text: '# of Defects',
+                                dataIndex: 'Defects',
+                                renderer: function(value) {
+                                    return value.Count;
+                                }
+                            }*/
+                        ]
+                    });
+                }
+            });
+            
+
+            Rally.launchApp('Rally.example.CustomStoreGrid', {
+              name: 'Custom Store Grid Example'
+            });
+        });
+    </script>
+
+    <style type="text/css">
+        
+    </style>
+</head>
+<body></body>
+</html>
