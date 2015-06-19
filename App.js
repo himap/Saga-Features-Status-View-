@@ -1,35 +1,63 @@
 Ext.define('Rally.example.SagaFeaturesView', {
     extend: 'Rally.app.App',
     componentCls: 'app',
+    layout: {
+        type: 'vbox',
+        align: 'stretch'
+    },
+    margin: '5 5 5 5',
     items: [{
-        xtype: 'component',
-        html: 'Select a checkbox to filter the grid',
-        style: {
-            marginBottom: '5px',
-            fontWeight: '600',
-        }
-    }, {
-        xtype: 'container',
-        itemId: 'c_TargetReleaseFilter'
-    }, {
-        xtype: 'container',
-        itemId: 'ScheduleStateFilter'
+            xtype: 'container',
+            layout: {
+                type: 'hbox',
+                align: 'stretch'
+            },
+            height: 210,
+            items: [{
+                xtype: 'container',
+                id: 'formCnt',
+                layout: {
+                    type: 'vbox'
+                },
+                items: [{
+                    xtype: 'text',
+                    text: 'Filter grid by Target Release',
+                    margin: '0 0 5 0',
+                    width: 200
+                }]
+            }, {
+                xtype: 'container',
+                id: 'chartCnt',
+                layout: {
+                    type: 'vbox',
+                    align: 'stretch'
+                },
+                flex: 1,
+                margin: '0 100 0 100'
+            }]
+        }, {
+            xtype: 'container',
+            flex: 1,
+            layout: {
+                type: 'hbox',
+                align: 'stretch'
+            },
+            id: 'gridCnt'
     }],
     sagaFeatures: null,
     
     launch: function() {
-            
-            
         this._createFilterBox('c_TargetRelease');
         this._createFilterBox('ScheduleState');
-        this.add({
-                xtype: 'rallybutton',
-                text: 'Submit',
-                handler: function() {
-                    this._getFilter();
-                },
-                scope: this
-            });
+        this.down('#formCnt').add({
+            xtype: 'rallybutton',
+            text: 'Submit',
+            handler: function() {
+                this._getFilter();
+            },
+            scope: this
+        });
+        this._createGrid(null);
     },
     
     _getAllChildren(ids) {
@@ -39,14 +67,17 @@ Ext.define('Rally.example.SagaFeaturesView', {
                     var me = this;
                     _.forEach(data, function(child) {
                         var itemHierarchy = child.get('_ItemHierarchy');
+                        
                         _.forEach(me.sagaFeatures, function(parent) {
-                            if (_.contains(itemHierarchy, parent.get('ObjectID'))) {
+                            
+                            if (parent.get('ObjectID') !== child.get('ObjectID') &&
+                                _.contains(itemHierarchy, parent.get('ObjectID'))) {
                                 parent.children.push(child);
                                 return false;
                             }
                         });
                     });
-                    console.log('matched up children');
+                    //this._getAllTestCases();
                     this._onDataLoaded();
                 },
                 scope: this
@@ -74,10 +105,39 @@ Ext.define('Rally.example.SagaFeaturesView', {
             }]
         });
     },
+    
+    _getAllTestCases: function() {
+        this._loadedTestCases = 0;
+        _.forEach(this.sagaFeatures, this._getTestCasesForSaga, this);
+    },
+    
+    _getTestCasesForSaga: function(sagaFeature) {
+        var filter =  Ext.create('Rally.data.wsapi.Filter', {
+             property: 'WorkProduct.ObjectID',
+             operator: '=',
+             value: sagaFeature.get('ObjectID')
+        });
+        Ext.create('Rally.data.wsapi.Store', {
+            model: 'testcase',
+            autoLoad: true,
+            filters: filter,
+            listeners: {
+                load: function(store, data, success) {
+                    this._loadedTestCases++;
+                    sagaFeature.testCases = data;
+                    if (this._loadedTestCases >= this.sagaFeatures.length) {
+                        this._onDataLoaded();
+                    }
+                },
+                scope: this
+            },
+            fetch: ['FormattedID', 'LastVerdict']
+        });
+    },
 
     _createFilterBox: function(property) {
         if (property === "c_TargetRelease") {
-            this.down('#' + property + 'Filter').add({
+            this.down('#formCnt').add({
                 xtype: 'rallyfieldvaluecombobox',
                 id: property + 'Combobox',
                 model: 'UserStory',
@@ -97,36 +157,38 @@ Ext.define('Rally.example.SagaFeaturesView', {
             });
         }
         else {
-            this.down('#' + property + 'Filter').add({
-                xtype: 'checkbox',
-                cls: 'filter',
-                boxLabel: 'Filter grid by ' + property,
-                id: property + 'Checkbox'
-            });
-            this.down('#' + property + 'Filter').add({
+            this.down('#formCnt').add([{
+                    xtype: 'text',
+                    text: 'Filter grid by Schedule State',
+                    margin: '0 0 5 0',
+                    width: 200
+                },{
                 xtype: 'rallyfieldvaluecombobox',
                 id: property + 'Combobox',
                 model: 'UserStory',
                 multiSelect: true,
-                field: property
-            });
+                field: property,
+                onReady: function() {
+                    var items = this.getStore().getRange();
+                    var item;
+                    _.forEach(items, function(i) {
+                        if (i.get('name') === 'Completed') {
+                            item =i;
+                            return false;
+                        }
+                    });
+                    this.select(item);
+                }
+            }]);
         }
     },
 
-
-
     _getFilter: function() {
-        // var filterString = Ext.getCmp('c_TargetReleaseCombobox').getValue() + '';
-        // var filter = [];
-        // if (filterString.length > 0) {
-        //     console.log(filterString.split(','));
-        //     filter.push({
-        //         property: 'c_TargetRelease',
-        //         operator: 'in',
-        //         value: filterString.split(',')
-        //     });
-        // }
-        // filter = this._checkFilterStatus('ScheduleState', filter);
+        if (this.down('#rollupChart')) {
+          this.down('#rollupChart').destroy();  
+        };
+        this.grid.reconfigure(null);
+        this.grid.setLoading(true);
         var filter = Ext.create('Rally.data.wsapi.Filter',{property: 'c_StoryType', operator: '=', value: 'SAGA Feature'});
 		filter=this._checkFilterStatus('c_TargetRelease',filter);					
 		filter=this._checkFilterStatus('ScheduleState',filter);
@@ -141,7 +203,7 @@ Ext.define('Rally.example.SagaFeaturesView', {
     },
     
     _checkFilterStatus: function(property, filter) {
-        if (property === 'c_TargetRelease' || Ext.getCmp(property + 'Checkbox').getValue()) {
+        
 			var filterString=Ext.getCmp(property + 'Combobox').getValue() +'';
 			var filterArr=filterString.split(',');
 			var propertyFilter=Ext.create('Rally.data.wsapi.Filter',{property: property, operator: '=', value: filterArr[0]});
@@ -155,53 +217,10 @@ Ext.define('Rally.example.SagaFeaturesView', {
 			i++;
 		}
 		filter=filter.and(propertyFilter);
-		}
 		return filter;
-        
-        // if (Ext.getCmp(property + 'Checkbox').getValue()) {
-        //     var filterString = Ext.getCmp(property + 'Combobox').getValue() + '';
-        //     filter.push({
-        //         property: property,
-        //         operator: 'in',
-        //         value: filterString.split(',')
-        //     });
-        // }
-        // return filter;
     },
 
     _makeStore: function(filter) {
-        // var filters = [{
-        //     property: '__At',
-        //     value: 'current'
-        // }, {
-        //     property: '_TypeHierarchy',
-        //     operator: '=',
-        //     value: 'HierarchicalRequirement'
-        // }, {
-        //     property: 'c_StoryType',
-        //     value: 'SAGA Feature'
-        // }];
-        // filters = _.union(filters, filter);
-        // Ext.create('Rally.data.lookback.SnapshotStore', {
-        //     listeners: {
-        //         scope: this,
-        //         load: function(store, data, success) {
-        //             this.sagaFeatures = data;
-        //             var ids = _.map(data, function(item) {
-        //                 item.children = [];
-        //                 return item.get('ObjectID');
-        //             });
-        //             this._getAllChildren(ids);
-        //         }
-        //     },
-        //     useHttpPost: true,
-        //     context: this.getContext().getDataContext(),
-        //     autoLoad: true,
-        //     hydrate: ['ScheduleState'],
-        //     fetch: ['FormattedID', 'Name', '_ref', 'ObjectID', 'Owner', 'Status', 'Blocked', 'Project',  
-        //             'PlanEstimate', 'ScheduleState', 'c_TargetRelease', 'Tasks', 'c_PriorityBin'],
-        //     filters: filters
-        // });
         this._myStore = Ext.create('Rally.data.wsapi.Store', {
             model: 'userstory',
             autoLoad: true,
@@ -220,21 +239,31 @@ Ext.define('Rally.example.SagaFeaturesView', {
                 scope: this
             },
             fetch: ['FormattedID', 'Name', '_ref', 'ObjectID', 'Owner', 'Status', 'Blocked', 'Project', 'Children', 
-            'PlanEstimate', 'ScheduleState', 'c_TargetRelease', 'Tasks', 'c_StoryType', 'c_PriorityBin', 'TestCases', 
-            'TestCaseStatus', 'Description', 'Iteration', 'LastVerdict']
+            'PlanEstimate', 'ScheduleState', 'c_TargetRelease', 'Tasks', 'TaskEstimateTotal', 'TaskRemainingTotal', 'c_StoryType', 'c_PriorityBin', 'TestCases', 
+            'TestCaseStatus', 'Description', 'Iteration', 'LastVerdict', 'Ready']
         });
     },
-
+    
     _onDataLoaded: function() {
         var data = this.sagaFeatures;
         console.log("on data loaded...");
         var stories = [];
-        console.log(this.sagaFeatures);
+        this._totals = {
+            totalStories: data.length,
+            totalStoriesAccepted: 0,
+            totalPointsAccepted: 0,
+            totalStoriesEstimated: 0,
+            totalPointsEstimated: 0,
+            totalStoriesScheduled: 0,
+            totalPlannedHours: 0,
+            totalHoursRemaining: 0
+        };
         Ext.Array.each(data, function(story) {
             var s = {
                 FormattedID: story.get('FormattedID'),
                 Name: story.get('Name'),
                 _ref: story.get("_ref"),
+                Ready: story.get('Ready'),
                 Owner: (story.get('Owner') && story.get('Owner')._refObjectName) || 'No Owner',
                 Project: story.get('Project').Name,
                 PlanEstimate: story.get('PlanEstimate'),
@@ -243,14 +272,26 @@ Ext.define('Rally.example.SagaFeaturesView', {
                 TargetRelease: story.get("c_TargetRelease"),
                 PriorityBin: story.get('c_PriorityBin'),
                 ChildrenCount: story.get("DirectChildrenCount"),
+                TaskEstimateTotal: story.get('TaskEstimateTotal'),
+                TaskRemainingTotal: story.get('TaskRemainingTotal'),
                 TestCaseCount: 'EEK',
                 TestCaseStatus: 'EEK',
                 Children: [],
-                TestCases: [],
+                TestCases: story.testCases,
                 Points: [],
                 CApts: [],
                 Percentage: 0
             };
+            
+            if (s.ScheduleState === 'Accepted' || s.ScheduleState === 'Completed') {
+                this._totals.totalStoriesAccepted++;
+                this._totals.totalPointsAccepted += s.PlanEstimate;
+            }
+            if (Ext.isNumber(s.PlanEstimate)) this._totals.totalStoriesEstimated++;
+            this._totals.totalPlannedHours += story.get('TaskEstimateTotal');
+            this._totals.totalHoursRemaining += story.get('TaskRemainingTotal');
+            this._totals.totalPointsEstimated += s.PlanEstimate;
+            
             _.forEach(story.children, function(child) {
                 var iteration = child.get('Iteration');
                 s.Children.push({
@@ -271,34 +312,7 @@ Ext.define('Rally.example.SagaFeaturesView', {
             var percent = (total / planest) * 100 || 0;
             s.Percentage = percent.toFixed(2) + "%";
             stories.push(s);
-        });
-                    //     var testcases = child.getCollection('TestCases', {
-                    //         fetch: ['FormattedID', 'LastVerdict']
-                    //     });
-                    //     testcases.load({
-                    //         callback: function(records, operation, success) {
-                    //             _.each(records, function(testcase) {
-                    //                 s.TestCases.push({
-                    //                     _ref: testcase.get('_ref'),
-                    //                     FormattedID: testcase.get('FormattedID'),
-                    //                     Name: testcase.get('Name'),
-                    //                     LastVerdict: testcase.get('LastVerdict')
-                    //                 });
-                    //             }, this);
-
-                    //             --pendingTestCases;
-                    //             if (pendingTestCases === 0) {
-                    //                 this._createGrid(stories);
-                    //             }
-                    //         },
-                    //         scope: this
-                    //     });
-                    // }, this);
-
-                    // --pendingChildren
-                    // if (pendingChildren === 0) {
-                    //     
-                    // }
+        }, this);
         this._createGrid(stories);
     },
 
@@ -308,11 +322,13 @@ Ext.define('Rally.example.SagaFeaturesView', {
             pageSize: 50,
         });
         if (!this.grid) {
-            this.grid = this.add({
+            this.grid = this.down('#gridCnt').add({
                 xtype: 'rallygrid',
+                id: 'dataGrid',
                 showPagingToolbar: true,
                 showRowActionsColumn: false,
                 editable: false,
+                flex: 1,
                 store: myCustomStore,
                 enableBlockedReasonPopover: false,
                 columnCfgs: [{
@@ -328,20 +344,18 @@ Ext.define('Rally.example.SagaFeaturesView', {
                         width: 100,
                         flex: 1
                     },
-                    //{
-                    //     text: 'State',
-                    //     dataIndex: 'ScheduleState',
-                    //     xtype: 'templatecolumn',
-                    //     tpl: Ext.create('Rally.ui.renderer.template.ScheduleStateTemplate', {
-                    //         states: ['Draft', 'Defined', 'In-Progress', 'Completed', 'Accepted'],
-                    //         field: {
-                    //             name: 'ScheduleState'
-                    //         }
-                    //     })
-                    // },
                     {
                         text: 'State',
-                        dataIndex: 'ScheduleState'
+                        dataIndex: 'ScheduleState',
+                        xtype: 'templatecolumn',
+                        tpl: Ext.create('Rally.ui.renderer.template.ScheduleStateTemplate', {
+                            field: {
+                                getAllowedStringValues: function() {
+                                    return ['Draft', 'Defined', 'In-Progress', 'Completed', 'Accepted'];
+                                },
+                                name: 'ScheduleState'
+                            }
+                        })
                     },
                     {
                         text: 'Priority',
@@ -356,22 +370,15 @@ Ext.define('Rally.example.SagaFeaturesView', {
                         text: 'T.Release',
                         dataIndex: 'TargetRelease'
                     }, {
-                        text: 'Completed Pts / Total Pts',
+                        text: 'Completed Pts / Total Pts (%)',
                         xtype: 'templatecolumn',
-                        tpl: '{CApts} / {PlanEstimate}'
-                    }, {
-                        text: '% Complete',
-                        dataIndex: 'Percentage'
+                        tpl: '{CApts} / {PlanEstimate} ({Percentage})'
                     },
                     {
-                        text: '% Complete', xtype: 'templatecolumn',
-							 tpl: Ext.create('Rally.ui.renderer.template.progressbar.ProgressBarTemplate', {
-							 percentDoneName: 'Percentage',
-							 calculateColorFn: function(recordData) {
-                                return "#F2C232";
-                            }
-						}),
-					},
+                         text: 'Remaining Hrs / Total Hrs',
+                        xtype: 'templatecolumn',
+                        tpl: '{TaskRemainingTotal} / {TaskEstimateTotal}'
+                    },
                     {
                         text: 'Children & Iteration Scheduled',
                         dataIndex: 'Children',
@@ -389,8 +396,11 @@ Ext.define('Rally.example.SagaFeaturesView', {
                         minWidth: 200,
                         renderer: function(value) {
                             var html = [];
+                            if (value) {
+                                console.log(value);
+                            }
                             Ext.Array.each(value, function(testcase) {
-                                html.push('<a href="' + Rally.nav.Manager.getDetailUrl(testcase) + '">' + testcase.FormattedID + '</a>' + '-' + testcase.LastVerdict);
+                                html.push('<a href="' + Rally.nav.Manager.getDetailUrl(testcase) + '">' + testcase.get('FormattedID') + '</a>' + '-' + testcase.get('LastVerdict'));
                             });
                             return html.join('</br>');
                         }
@@ -400,6 +410,74 @@ Ext.define('Rally.example.SagaFeaturesView', {
         }
         else {
             this.grid.reconfigure(myCustomStore);
+            this.down('#dataGrid').setLoading(false);
+            
+            this._createChart();
+            
         }
+        
+    },
+    
+    _createChart: function() {
+        
+        var chart = this.down('#chartCnt').add({
+           xtype: 'rallychart',
+           id: 'rollupChart',
+           loadMask: false,
+             chartConfig: {
+                chart: {
+                    type: 'column',
+                    inverted: true,
+                    height: 200
+                },
+                title: {
+                    text: 'SAGA Feature % Completion'
+                },
+                xAxis: {
+                    
+                },
+                yAxis: {
+                    min: 0,
+                    labels: {
+                        formatter: function() {
+                            return this.value + '%';
+                        }
+                    },
+                    title: {
+                    text: null
+                },
+                }, 
+                
+                tooltip: {
+                    pointFormat: '<span style="color:{series.color}">{series.name}</span>: <b>{point.y}</b> ({point.percentage:.0f}%)<br/>',
+                    shared: true
+                },
+                plotOptions: {
+                    column: {
+                        stacking: 'percent'
+                    }
+                },
+                legend: {
+                    reversed: true
+                }
+             },
+             chartColors: ["#F6A900", "#8DC63F"],
+             chartData: {
+                categories: ['Task Hours', 'SAGA Features', 'Feature Points', '# Stories Estimated'],
+                series: [ {
+                    name: 'Remaining',
+                    data: [this._totals.totalHoursRemaining, 
+                            (this._totals.totalStories-this._totals.totalStoriesAccepted), 
+                            (this._totals.totalPointsEstimated - this._totals.totalPointsAccepted), 
+                            (this._totals.totalStories - this._totals.totalStoriesEstimated)]
+                }, {
+                    name: 'Completed',
+                    data: [(this._totals.totalPlannedHours - this._totals.totalHoursRemaining), 
+                            this._totals.totalStoriesAccepted, 
+                            this._totals.totalPointsAccepted, 
+                            this._totals.totalStoriesEstimated]
+                }]
+             }
+        });
     }
 });

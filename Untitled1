@@ -1,0 +1,52 @@
+https://rally1.rallydev.com/analytics/v2.0/service/rally/workspace/307187887/artifact/snapshot/query?_dc=1434661948182&find=%7B%22__At%22%3A%22current%22%2C%22_ItemHierarchy%22%3A%7B%22%24in%22%3A%227778253638%2C26654050001%2C26654049210%2C17210463309%2C26651092139%2C26729659420%2C27202750616%2C32684793357%2C26188083211%2C26723091615%2C32291932998%2C34626430065%2C31133765590%2C26598227715%2C26598226203%2C31553796817%2C25955712547%2C26718826006%2C26653523558%2C34439815058%2C33208909953%2C36777892254%2C29232159533%2C26381566621%2C36975101321%2C32792586045%2C26729559634%2C33153238861%2C27979350206%2C2229875883%2C35124943951%2C26634929515%2C34361227496%2C33606742274%2C30699889397%2C34607218465%2C36029257384%2C37105889780%2C32724825148%2C32858284487%2C36489533554%2C36489351339%2C27954866249%2C37255999897%2C36975211551%2C14605510577%2C33152897646%2C33854647622%2C26477944144%2C26652088749%2C28371773334%2C32684594098%2C32684704491%2C25541279264%2C26220044909%2C32724819266%2C33002060859%2C33399040743%2C28304994489%2C33186261979%2C32095791194%2C26347676901%2C28111537926%2C26344278958%2C30883747765%2C33003625411%2C34404039670%2C36874660881%2C26106169915%2C32259152397%2C32201561343%2C31549754935%2C27228945763%2C27203069204%2C33821985285%2C32095843578%2C30296471548%2C34649543029%2C33924942090%2C26355649395%22%7D%2C%22Children%22%3Anull%2C%22_TypeHierarchy%22%3A%22HierarchicalRequirement%22%7D&fields=%5B%22FormattedID%22%2C%22Name%22%2C%22_ref%22%2C%22ObjectID%22%2C%22Owner%22%2C%22Status%22%2C%22DirectChildrenCount%22%2C%22_ValidFrom%22%2C%22_ValidTo%22%2C%22Project%22%5D&hydrate=%5B%5D&pagesize=20000&start=0&jsonp=Ext.data.JsonP.callback5
+
+
+https://rally1.rallydev.com/analytics/v2.0/service/rally/workspace/307187887/artifact/snapshot/query?_dc=1434661948182&find={"__At":"current","_ItemHierarchy":{"$in":"7778253638,26654050001,26654049210,17210463309,26651092139,26729659420,27202750616,32684793357,26188083211,26723091615,32291932998,34626430065,31133765590,26598227715,26598226203,31553796817,25955712547,26718826006,26653523558,34439815058,33208909953,36777892254,29232159533,26381566621,36975101321,32792586045,26729559634,33153238861,27979350206,2229875883,35124943951,26634929515,34361227496,33606742274,30699889397,34607218465,36029257384,37105889780,32724825148,32858284487,36489533554,36489351339,27954866249,37255999897,36975211551,14605510577,33152897646,33854647622,26477944144,26652088749,28371773334,32684594098,32684704491,25541279264,26220044909,32724819266,33002060859,33399040743,28304994489,33186261979,32095791194,26347676901,28111537926,26344278958,30883747765,33003625411,34404039670,36874660881,26106169915,32259152397,32201561343,31549754935,27228945763,27203069204,33821985285,32095843578,30296471548,34649543029,33924942090,26355649395"},"Children":null,"_TypeHierarchy":"HierarchicalRequirement"}&fields=["FormattedID","Name","_ref","ObjectID","Owner","Status","DirectChildrenCount","_ValidFrom","_ValidTo","Project"]&hydrate=[]&pagesize=20000&start=0&jsonp=Ext.data.JsonP.callback5
+
+_makeStore:function(filter){    
+                	this._myStore = Ext.create('Rally.data.wsapi.Store', {
+                        model: 'userstory',
+                        autoLoad: true,
+                        showPagingToolbar: true,
+                  		limit: Infinity,
+						filters: filter,
+                        listeners: {
+                            load: this._onDataLoaded,
+                            scope: this
+                        },
+                        fetch: ['FormattedID', 'Name', '_ref', 'ObjectID', 'Owner', 'Status', 'Blocked', 'Project', 'Children', 'PlanEstimate', 'ScheduleState', 'c_TargetRelease', 'Tasks', 'c_StoryType', 'c_PriorityBin', 'TestCases', 'TestCaseStatus', 'Description', 'Iteration', 'LastVerdict']
+                    });
+                },
+                
+ _getFilter: function() {
+					var filter = Ext.create('Rally.data.wsapi.Filter',{property: 'c_StoryType', operator: '=', value: 'SAGA Feature'});
+					filter=this._checkFilterStatus('c_TargetRelease',filter);					
+					filter=this._checkFilterStatus('ScheduleState',filter);
+						if (this._myStore === undefined) {
+							this._makeStore(filter);
+						}
+						else{
+							this._myStore.clearFilter(true);
+							this._myStore.filter(filter);
+						   
+						}
+				},
+
+_checkFilterStatus: function(property,filter){
+					if (Ext.getCmp(property + 'Checkbox').getValue()) {
+						var filterString=Ext.getCmp(property + 'Combobox').getValue() +'';
+						var filterArr=filterString.split(',');
+						var propertyFilter=Ext.create('Rally.data.wsapi.Filter',{property: property, operator: '=', value: filterArr[0]});
+						var i=1;
+						while (i < filterArr.length){
+							propertyFilter=propertyFilter.or({
+								property: property,
+							operator: '=',
+							value: filterArr[i]
+						});
+						i++;
+					}
+					filter=filter.and(propertyFilter);
+					}
+					return filter;
+				},
