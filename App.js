@@ -60,81 +60,50 @@ Ext.define('Rally.example.SagaFeaturesView', {
         this._createGrid(null);
     },
     
-    _getAllChildren(ids) {
-        Ext.create('Rally.data.lookback.SnapshotStore', {
-            listeners: {
-                load: function(store, data, success) {
-                    var me = this;
-                    _.forEach(data, function(child) {
-                        var itemHierarchy = child.get('_ItemHierarchy');
-                        
-                        _.forEach(me.sagaFeatures, function(parent) {
-                            
-                            if (parent.get('ObjectID') !== child.get('ObjectID') &&
-                                _.contains(itemHierarchy, parent.get('ObjectID'))) {
-                                parent.children.push(child);
-                                return false;
-                            }
-                        });
-                    });
-                    //this._getAllTestCases();
-                    this._onDataLoaded();
-                },
-                scope: this
-            },
-            context: this.getContext().getDataContext(),
-            autoLoad: true,                 
-            compress: true,
-            useHttpPost: true,
-            hydrate: ['Iteration', 'Project', 'ScheduleState'],
-            fetch: ['FormattedID', 'Name', '_ref', 'ObjectID', 'Parent', '_ItemHierarchy', 'Iteration', 'Project', 'ScheduleState', 'PlanEstimate'],
-            filters: [{
-                property: '__At',
-                value: 'current'
-            }, {
-                property: '_TypeHierarchy',
-                operator: '=',
-                value: 'HierarchicalRequirement'
-            }, {
-                property: '_ItemHierarchy',
-                operator: 'in',
-                value: ids
-            }, {
-                property: 'Children',
-                value: null
-            }]
-        });
+    _getAllChildren() {
+        this.childrenLoaded = 0;
+        this.childrenToLoad = 0;
+        
+        _.forEach(this.sagaFeatures, function(sagaFeature) {
+            this._getAllChildThings(sagaFeature, sagaFeature);
+        }, this);
+        var me = this;
+        var timeout = setInterval(function() {
+            console.log('on', me.childrenLoaded, me.childrenToLoad);
+            if (me.childrenLoaded >= me.childrenToLoad) {
+                clearTimeout(timeout);
+                me._onDataLoaded();
+            }
+        }, 300);
     },
-    
-    _getAllTestCases: function() {
-        this._loadedTestCases = 0;
-        _.forEach(this.sagaFeatures, this._getTestCasesForSaga, this);
-    },
-    
-    _getTestCasesForSaga: function(sagaFeature) {
-        var filter =  Ext.create('Rally.data.wsapi.Filter', {
-             property: 'WorkProduct.ObjectID',
-             operator: '=',
-             value: sagaFeature.get('ObjectID')
-        });
-        Ext.create('Rally.data.wsapi.Store', {
-            model: 'testcase',
-            autoLoad: true,
-            filters: filter,
-            listeners: {
-                load: function(store, data, success) {
-                    this._loadedTestCases++;
-                    sagaFeature.testCases = data;
-                    if (this._loadedTestCases >= this.sagaFeatures.length) {
-                        this._onDataLoaded();
+    _getAllChildThings: function(sagaFeature, child) {
+        if (child.get('DirectChildrenCount') > 0) {
+            this.childrenToLoad++;
+            var children = child.getCollection('Children', {fetch: ['FormattedID', 'Name', '_ref', 'ObjectID', 'Parent', '_ItemHierarchy', 'Iteration', 'Project', 'ScheduleState', 'PlanEstimate']});
+            children.load({callback: function(data) {
+                this.childrenLoaded++;
+                _.forEach(data, function(c) {
+                    if (c.get('DirectChildrenCount') == 0) {
+                        sagaFeature.children.push(c);
                     }
-                },
-                scope: this
-            },
-            fetch: ['FormattedID', 'LastVerdict']
-        });
+                    this._getAllChildThings(sagaFeature, c);
+                }, this);
+            }, scope: this});
+        }
+        this.childrenToLoad++;
+        var testCases = child.getCollection('TestCases', {fetch: ['FormattedID', 'LastVerdict']});
+        testCases.load({callback: function(data) {
+            _.forEach(data, function(tc) {
+                sagaFeature.testCases.push(tc);
+            }, this);
+           if (data.length > 0) {
+            console.log('testCases', data);
+           }
+           this.childrenLoaded++;
+        }, scope: this});
+        
     },
-
+    
     _createFilterBox: function(property) {
         if (property === "c_TargetRelease") {
             this.down('#formCnt').add({
@@ -191,7 +160,6 @@ Ext.define('Rally.example.SagaFeaturesView', {
         this.grid.setLoading(true);
         var filter = Ext.create('Rally.data.wsapi.Filter',{property: 'c_StoryType', operator: '=', value: 'SAGA Feature'});
 		filter=this._checkFilterStatus('c_TargetRelease',filter);					
-		filter=this._checkFilterStatus('ScheduleState',filter);
         if (this._myStore === undefined) {
             this._makeStore(filter);
         }
@@ -232,6 +200,7 @@ Ext.define('Rally.example.SagaFeaturesView', {
                     this.sagaFeatures = data;
                     var ids = _.map(data, function(item) {
                         item.children = [];
+                        item.testCases = [];
                         return item.get('ObjectID');
                     });
                     this._getAllChildren(ids);
@@ -247,6 +216,8 @@ Ext.define('Rally.example.SagaFeaturesView', {
     _onDataLoaded: function() {
         var data = this.sagaFeatures;
         console.log("on data loaded...");
+        var filterString = Ext.getCmp('ScheduleStateCombobox').getValue() + '';
+        var filters = filterString.split(',');
         var stories = [];
         this._totals = {
             totalStories: data.length,
@@ -279,7 +250,7 @@ Ext.define('Rally.example.SagaFeaturesView', {
                 Children: [],
                 TestCases: story.testCases,
                 Points: [],
-                CApts: [],
+                CApts: 0,
                 Percentage: 0
             };
             
@@ -299,21 +270,26 @@ Ext.define('Rally.example.SagaFeaturesView', {
                     FormattedID: child.get('FormattedID'),
                     Iteration: (iteration && iteration.Name) || 'Unscheduled'
                 });
+                if (s.FormattedID === 'US103820') {
+                    console.log(child.get('PlanEstimate'));
+                }
                 if (child.get('ScheduleState') == 'Completed' || child.get('ScheduleState') == 'Accepted') {
+                    
                     s.Points.push(child.get('PlanEstimate'));
                 }
             })
-            var total = 0;
-            for (var i = 0; i < s.Points.length; i++) {
-                total += s.Points[i];
-            }
-            s.CApts.push(total.toFixed(2));
+            
+            s.CApts = _.reduce(s.Points, function(i, acc) {return (i || 0 ) + acc;}, 0);
             var planest = s.PlanEstimate;
-            var percent = (total / planest) * 100 || 0;
+            var percent = (s.CApts / planest) * 100 || 0;
             s.Percentage = percent.toFixed(2) + "%";
-            stories.push(s);
+            if (_.contains(filters, s.ScheduleState)) {
+                console.log(story);
+                stories.push(s);
+            }
         }, this);
         this._createGrid(stories);
+        window.stories = stories;
     },
 
     _createGrid: function(stories) {
@@ -341,7 +317,6 @@ Ext.define('Rally.example.SagaFeaturesView', {
                     }, {
                         text: 'Name',
                         dataIndex: 'Name',
-                        width: 100,
                         flex: 1
                     },
                     {
@@ -390,15 +365,13 @@ Ext.define('Rally.example.SagaFeaturesView', {
                             });
                             return html.join('</br>');
                         }
-                    }, {
+                    }, 
+                    {
                         text: 'TestCases-Verdict',
                         dataIndex: 'TestCases',
                         minWidth: 200,
                         renderer: function(value) {
                             var html = [];
-                            if (value) {
-                                console.log(value);
-                            }
                             Ext.Array.each(value, function(testcase) {
                                 html.push('<a href="' + Rally.nav.Manager.getDetailUrl(testcase) + '">' + testcase.get('FormattedID') + '</a>' + '-' + testcase.get('LastVerdict'));
                             });
@@ -411,9 +384,7 @@ Ext.define('Rally.example.SagaFeaturesView', {
         else {
             this.grid.reconfigure(myCustomStore);
             this.down('#dataGrid').setLoading(false);
-            
             this._createChart();
-            
         }
         
     },
@@ -449,7 +420,7 @@ Ext.define('Rally.example.SagaFeaturesView', {
                 }, 
                 
                 tooltip: {
-                    pointFormat: '<span style="color:{series.color}">{series.name}</span>: <b>{point.y}</b> ({point.percentage:.0f}%)<br/>',
+                    pointFormat: '<span style="color:{series.color}">{series.name}</span>: <b>{point.y:.0f}</b> ({point.percentage:.0f}%)<br/>',
                     shared: true
                 },
                 plotOptions: {
